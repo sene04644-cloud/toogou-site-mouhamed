@@ -1,0 +1,522 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  ShoppingBag, ShoppingCart, Phone, Truck, CheckCircle, 
+  Trash2, Loader2, ArrowRight, Plus, Minus, CreditCard, Smartphone, 
+  Edit, ImageIcon, Settings, Lock, User, X, LogOut, ShieldCheck, 
+  Download, LayoutDashboard, Package, ListOrdered, Camera, FileText
+} from 'lucide-react';
+
+// LOGO
+import monLogo from './logo.png';
+
+// ==========================================
+// MOTEUR CLOUD (TES VRAIES CLÉS FIREBASE 📸)
+// ==========================================
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+
+const isCanvasEnv = typeof (window as any).__firebase_config !== 'undefined';
+
+const monFirebaseConfig = { 
+  apiKey: "AIzaSyCvX04dmE4OiMA4zGPHZI4bE9X00K6J_jc", 
+  authDomain: "toogou-yaye-isseu-f8f91.firebaseapp.com", 
+  projectId: "toogou-yaye-isseu-f8f91", 
+  storageBucket: "toogou-yaye-isseu-f8f91.firebasestorage.app", 
+  messagingSenderId: "124993461574", 
+  appId: "1:124993461574:web:97adba4799483dd94b5947" 
+};
+
+let app: any, auth: any, db: any;
+const config = isCanvasEnv ? JSON.parse((window as any).__firebase_config) : monFirebaseConfig;
+app = initializeApp(config);
+auth = getAuth(app);
+db = getFirestore(app);
+
+const appId = typeof (window as any).__app_id !== 'undefined' ? (window as any).__app_id : 'toggou-app';
+const getCol = (name: string) => isCanvasEnv ? collection(db, 'artifacts', appId, 'public', 'data', name) : collection(db, name);
+
+// ==========================================
+// STYLES ET SCRIPTS
+// ==========================================
+if (typeof document !== 'undefined') {
+  if (!document.getElementById('tailwind-cdn')) {
+    const s = document.createElement('script'); s.id = 'tailwind-cdn'; s.src = 'https://cdn.tailwindcss.com'; document.head.appendChild(s);
+  }
+  if (!document.getElementById('jspdf-cdn')) {
+    const s = document.createElement('script'); s.id = 'jspdf-cdn'; s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; document.head.appendChild(s);
+  }
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    body { background-color: #fdfcf0; -webkit-tap-highlight-color: transparent; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+  `;
+  document.head.appendChild(style);
+}
+
+const defaultWave = { link: "https://pay.wave.com/m/M_sn_gVXfYmT1RX3D/c/sn/", phone: "78 520 73 44" };
+const defaultSecurity = { username: "Mouhamed", password: "1234" };
+const defaultProduct = { id: 'main', name: "Le Nokoss Royal", price: 7500, description: "L'assaisonnement parfait fait maison.", image: "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=800" };
+
+// ==========================================
+// COMPOSANT PRINCIPAL
+// ==========================================
+export default function App() {
+  const [user, setUser] = useState<any>(null);
+  const [view, setView] = useState('home');
+  const [cart, setCart] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [gallery, setGallery] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [waveConfig, setWaveConfig] = useState(defaultWave);
+  const [adminCreds, setAdminCreds] = useState(defaultSecurity);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginForm, setLoginForm] = useState({ u: '', p: '' });
+  const [loading, setLoading] = useState(true);
+  const [lastOrder, setLastOrder] = useState<any>(null);
+
+  const logoClicks = useRef(0);
+  const handleLogoTrigger = () => {
+    logoClicks.current += 1;
+    if (logoClicks.current >= 5) {
+      logoClicks.current = 0;
+      setShowLogin(true);
+    }
+    setTimeout(() => { logoClicks.current = 0; }, 3000);
+  };
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if ((window as any).__initial_auth_token) await signInWithCustomToken(auth, (window as any).__initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch (e) { console.error(e); }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const u1 = onSnapshot(getCol('products'), (s) => setProducts(s.docs.length > 0 ? s.docs.map(d=>({id:d.id, ...d.data()})) : [defaultProduct]));
+    const u2 = onSnapshot(getCol('orders'), (s) => setOrders(s.docs.map(d=>({id:d.id, ...d.data()})).sort((a:any,b:any)=>b.createdAt-a.createdAt)));
+    const u3 = onSnapshot(getCol('gallery'), (s) => setGallery(s.docs.map(d=>({id:d.id, ...d.data()})).sort((a:any,b:any)=>b.createdAt-a.createdAt)));
+    const u4 = onSnapshot(doc(getCol('settings'), 'wave_config'), (d) => d.exists() && setWaveConfig(d.data() as any));
+    const u5 = onSnapshot(doc(getCol('settings'), 'admin_creds'), (d) => { if (d.exists()) setAdminCreds(d.data() as any); setLoading(false); });
+    return () => { u1(); u2(); u3(); u4(); u5(); };
+  }, [user]);
+
+  const addToCart = (product: any, qty: number) => {
+    setCart(prev => {
+      const exist = prev.find(i => i.id === product.id);
+      if (exist) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + qty } : i);
+      return [...prev, { ...product, quantity: qty }];
+    });
+    setView('cart');
+  };
+
+  if (loading) return <div className="h-screen flex flex-col items-center justify-center bg-[#FDFCF0]"><Loader2 className="w-16 h-16 text-green-700 animate-spin mb-4" /><p className="font-bold uppercase text-xs">Chargement...</p></div>;
+
+  return (
+    <div className="min-h-screen bg-[#FDFCF0] flex flex-col font-sans text-gray-800">
+      
+      {showLogin && (
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
+          <div className="bg-white rounded-[40px] p-10 w-full max-w-sm shadow-2xl border-t-[12px] border-yellow-500 relative text-center">
+            <button onClick={() => setShowLogin(false)} className="absolute top-6 right-6 text-gray-400"><X /></button>
+            <ShieldCheck size={48} className="mx-auto text-yellow-600 mb-4" />
+            <h2 className="text-2xl font-black text-gray-900 uppercase mb-8">Accès Chef</h2>
+            <form onSubmit={(e)=>{e.preventDefault(); if(loginForm.u===adminCreds.username && loginForm.p===adminCreds.password){setIsAdmin(true); setShowLogin(false);} else alert("Code incorrect");}} className="space-y-4">
+              <input required placeholder="Nom" className="w-full bg-gray-50 border-2 p-4 rounded-2xl font-bold outline-none focus:border-yellow-500" value={loginForm.u} onChange={e=>setLoginForm({...loginForm, u: e.target.value})} />
+              <input required type="password" placeholder="Code secret" className="w-full bg-gray-50 border-2 p-4 rounded-2xl font-bold outline-none focus:border-yellow-500" value={loginForm.p} onChange={e=>setLoginForm({...loginForm, p: e.target.value})} />
+              <button type="submit" className="w-full bg-gray-900 text-white font-black py-4 rounded-2xl shadow-xl uppercase transform active:scale-95 transition">Entrer</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <header className="bg-[#006837] text-white p-3 sticky top-0 z-40 shadow-xl border-b-4 border-[#FFD700]">
+        <div className="max-w-6xl mx-auto flex justify-between items-center px-4">
+          <div className="flex items-center space-x-3 cursor-pointer select-none" onClick={handleLogoTrigger}>
+            <div className="bg-white rounded-full w-10 h-10 border-2 border-[#FFD700] overflow-hidden"><img src={monLogo} className="w-full h-full object-cover" /></div>
+            <h1 className="font-black text-lg text-[#FFD700] uppercase tracking-tighter">Toggou Yaye Isseu</h1>
+          </div>
+          <div className="flex items-center space-x-3">
+            {!isAdmin && (
+              <>
+                <button onClick={() => setView('home')} className="hover:text-yellow-400 p-2"><ShoppingBag size={22}/></button>
+                <button onClick={() => setView('cart')} className="relative bg-black/20 p-2.5 rounded-full">
+                  <ShoppingCart size={22} />
+                  {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-black border-2 border-[#006837]">{cart.length}</span>}
+                </button>
+              </>
+            )}
+            {isAdmin && <button onClick={() => setIsAdmin(false)} className="bg-red-600 text-white p-2 rounded-xl"><LogOut size={18}/></button>}
+          </div>
+        </div>
+      </header>
+
+      <main className={`flex-1 w-full mx-auto ${isAdmin ? 'max-w-7xl' : 'max-w-6xl p-4 py-8 md:py-12'}`}>
+        {!isAdmin ? (
+          <>
+            {view === 'home' && <HomeView products={products} onAdd={addToCart} />}
+            {view === 'cart' && <CartView cart={cart} setView={setView} setCart={setCart} />}
+            {view === 'checkout' && <CheckoutView cart={cart} setView={setView} setCart={setCart} orders={orders} setOrders={setOrders} user={user} waveConfig={waveConfig} setLastOrder={setLastOrder} />}
+            {view === 'success' && <SuccessView order={lastOrder} setView={setView} />}
+            {view === 'wave-success' && <WaveSuccessView order={lastOrder} setView={setView} waveConfig={waveConfig} />}
+          </>
+        ) : (
+          <AdminPanel orders={orders} setOrders={setOrders} products={products} setProducts={setProducts} gallery={gallery} setGallery={setGallery} waveConfig={waveConfig} setWaveConfig={setWaveConfig} adminCreds={adminCreds} setAdminCreds={setAdminCreds} user={user} />
+        )}
+      </main>
+
+      {!isAdmin && <footer className="bg-green-950 text-white/30 p-10 text-center border-t-8 border-[#FFD700] text-[9px] uppercase font-black tracking-widest mt-auto">© {new Date().getFullYear()} Mouhamed • Excellence Culinaire 🇸🇳</footer>}
+    </div>
+  );
+}
+
+// ==========================================
+// VUES CLIENTS
+// ==========================================
+function HomeView({ products, onAdd }: any) {
+  if (products.length === 0) return <div className="text-center py-20 text-gray-400 font-bold italic animate-pulse">Vitrine vide...</div>;
+  return (
+    <div className="space-y-12 animate-fade-in">
+      {products.map((p: any, i: number) => (
+        <div key={p.id} className={`bg-white rounded-[45px] shadow-2xl overflow-hidden border border-green-50 flex flex-col md:flex-row ${i%2!==0?'md:flex-row-reverse':''}`}>
+          <div className="md:w-1/2 h-80 md:h-auto overflow-hidden relative bg-gray-100 flex items-center justify-center group">
+            {p.image ? <img src={p.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" /> : <ImageIcon size={64} className="text-gray-200" />}
+            <div className="absolute top-6 left-6 bg-yellow-400 text-green-900 font-black px-4 py-2 rounded-full text-[10px] uppercase shadow-lg border-2 border-white">Premium</div>
+          </div>
+          <div className="md:w-1/2 p-8 md:p-14 flex flex-col justify-center">
+            <h2 className="text-4xl font-black text-[#006837] mb-4 uppercase tracking-tighter leading-none">{p.name}</h2>
+            <p className="text-gray-500 mb-10 italic text-lg leading-relaxed whitespace-pre-wrap">"{p.description}"</p>
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-10 gap-4">
+              <div className="text-5xl font-black text-green-700 tracking-tighter">{Number(p.price).toLocaleString()} F</div>
+              <Counter onAdd={(q)=>onAdd(p, q)} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Counter({ onAdd }: any) {
+  const [q, setQ] = useState(1);
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex items-center bg-gray-50 rounded-2xl p-1.5 border-2 border-gray-100">
+        <button onClick={()=>setQ(Math.max(1, q-1))} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-sm"><Minus size={18}/></button>
+        <span className="w-12 text-center font-black text-2xl text-green-950">{q}</span>
+        <button onClick={()=>setQ(q+1)} className="w-10 h-10 flex items-center justify-center bg-white rounded-xl shadow-sm"><Plus size={18}/></button>
+      </div>
+      <button onClick={()=>onAdd(q)} className="bg-[#006837] text-white p-5 rounded-2xl shadow-xl transition active:scale-90 hover:bg-green-800"><ShoppingBag size={24}/></button>
+    </div>
+  );
+}
+
+function CartView({ cart, setView, setCart }: any) {
+  const total = cart.reduce((s:any,i:any)=>s+i.price*i.quantity,0);
+  if (cart.length === 0) return <div className="text-center py-24"><ShoppingCart size={80} className="mx-auto text-gray-200 mb-6"/><h2 className="text-3xl font-black text-gray-300 uppercase italic">Vide</h2><button onClick={()=>setView('home')} className="mt-8 bg-green-800 text-white px-10 py-4 rounded-full font-black">Retour Boutique</button></div>;
+  return (
+    <div className="max-w-3xl mx-auto bg-white rounded-[45px] shadow-2xl overflow-hidden animate-fade-in border border-green-50">
+      <div className="p-8 bg-green-50 border-b font-black text-green-900 uppercase text-xl">Mon Panier</div>
+      <div className="p-8 space-y-6">
+        {cart.map((item: any) => (
+          <div key={item.id} className="flex items-center justify-between border-b border-gray-50 pb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-gray-50 rounded-xl overflow-hidden border">{item.image && <img src={item.image} className="w-full h-full object-cover" />}</div>
+              <div><p className="font-black text-xl text-gray-800 uppercase leading-none">{item.name}</p><p className="text-green-700 font-bold mt-1 text-sm">{item.quantity} pot(s) x {Number(item.price).toLocaleString()} F</p></div>
+            </div>
+            <div className="font-black text-2xl text-green-900">{(item.quantity * item.price).toLocaleString()} F</div>
+          </div>
+        ))}
+      </div>
+      <div className="p-10 bg-[#FFD700] flex flex-col md:flex-row justify-between items-center gap-6 shadow-inner">
+        <p className="text-6xl font-black text-green-950 tracking-tighter">{total.toLocaleString()} F</p>
+        <button onClick={()=>setView('checkout')} className="bg-green-950 text-white font-black px-12 py-6 rounded-[30px] uppercase text-xl flex items-center gap-4 transition active:scale-95 shadow-xl">Valider <ArrowRight/></button>
+      </div>
+    </div>
+  );
+}
+
+function CheckoutView({ cart, setView, setCart, orders, setOrders, user, waveConfig, setLastOrder }: any) {
+  const [f, setF] = useState({n:'', p:'', a:''});
+  const [m, setM] = useState('wave');
+  const [isValidating, setIsValidating] = useState(false);
+  const total = cart.reduce((s:any,i:any)=>s+i.price*i.quantity,0);
+
+  const done = async (e: any) => {
+    e.preventDefault();
+    setIsValidating(true);
+    const newOrder = { id: Date.now().toString(), customer: f, items: cart, total: total, method: m, status: m==='wave'?'Vérif Wave':'Validée', createdAt: Date.now(), displayId: `TI-${Math.floor(Math.random()*90000)+10000}` };
+    setLastOrder(newOrder);
+    setTimeout(async () => {
+      if (user) await setDoc(doc(getCol('orders'), newOrder.id), newOrder);
+      setCart([]);
+      if (m === 'wave') { window.open(waveConfig.link, '_blank'); setView('wave-success'); }
+      else setView('success');
+    }, 2500);
+  };
+
+  if (isValidating) return <div className="fixed inset-0 bg-[#006837] flex flex-col items-center justify-center z-[9999] text-white p-8"><Loader2 className="w-20 h-20 animate-spin mb-6 text-[#FFD700]" /><h2 className="text-4xl font-black uppercase tracking-tighter">Synchronisation...</h2></div>;
+
+  return (
+    <div className="max-w-xl mx-auto bg-white rounded-[45px] shadow-2xl overflow-hidden border-t-[16px] border-[#006837] animate-fade-in">
+      <div className="p-8 text-center bg-green-50 border-b font-black text-green-900 uppercase text-2xl tracking-tighter">Livraison</div>
+      <form onSubmit={done} className="p-8 space-y-6">
+        <input required placeholder="Nom Complet" className="w-full bg-gray-50 border-4 border-gray-100 p-5 rounded-3xl font-bold outline-none focus:border-green-500 transition text-lg" value={f.n} onChange={e=>setF({...f, n: e.target.value})} />
+        <input required type="tel" placeholder="Numéro Téléphone" className="w-full bg-gray-50 border-4 border-gray-100 p-5 rounded-3xl font-bold outline-none focus:border-green-500 transition text-lg" value={f.p} onChange={e=>setF({...f, p: e.target.value})} />
+        <textarea required placeholder="Adresse exacte" className="w-full bg-gray-50 border-4 border-gray-100 p-5 rounded-3xl font-bold outline-none focus:border-green-500 transition h-28 resize-none text-lg" value={f.a} onChange={e=>setF({...f, a: e.target.value})} />
+        <div className="grid grid-cols-2 gap-4">
+           <div onClick={()=>setM('wave')} className={`p-6 rounded-3xl border-4 cursor-pointer text-center transition ${m==='wave'?'border-blue-500 bg-blue-50 shadow-md':'border-gray-50 opacity-40 grayscale'}`}><span className="text-3xl font-black italic text-blue-600 block mb-1">Wave</span><span className="text-[10px] font-black uppercase text-blue-400">Mobile</span></div>
+           <div onClick={()=>setM('delivery')} className={`p-6 rounded-3xl border-4 cursor-pointer transition flex flex-col items-center justify-center ${m==='delivery'?'border-green-500 bg-green-50 shadow-md':'border-gray-50 opacity-40 grayscale'}`}><Truck className="text-green-700" size={32}/><span className="text-[10px] font-black uppercase mt-1">Espèces</span></div>
+        </div>
+        <button type="submit" className="w-full bg-green-950 text-white font-black py-7 rounded-[35px] shadow-2xl text-2xl uppercase transform active:scale-95 transition mt-4">Commander</button>
+      </form>
+    </div>
+  );
+}
+
+// ==========================================
+// 🛠️ MOTEUR PDF (BLINDÉ MOUHAMED)
+// ==========================================
+const genererFacture = (order: any) => {
+  const { jsPDF } = (window as any).jspdf;
+  const doc = new jsPDF();
+  
+  // Fonction de nettoyage ultime (Évite les &7 /&5)
+  const fNum = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const fTxt = (t: string) => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x00-\x7F]/g, "");
+
+  // Header
+  doc.setFillColor(0, 104, 55); doc.rect(0, 0, 210, 45, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(26); doc.setFont("helvetica", "bold"); doc.text("TOGGOU YAYE ISSEU", 20, 25);
+  doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text("Excellence Culinaire Senegalaise", 20, 33);
+  
+  // Titre
+  doc.setTextColor(0, 0, 0); doc.setFontSize(18); doc.setFont("helvetica", "bold"); doc.text("RECU DE COMMANDE", 20, 65);
+  doc.setFontSize(11); doc.setFont("helvetica", "normal");
+  doc.text("Reference : " + order.displayId, 20, 75);
+  
+  // 👉 MODE DE PAIEMENT AUTO
+  const payType = order.method === 'wave' ? "Wave (Paiement Mobile)" : "Especes a la livraison";
+  doc.setFont("helvetica", "bold"); doc.text("PAIEMENT : " + payType, 20, 81);
+  
+  // Client
+  doc.setFont("helvetica", "bold"); doc.text("CLIENT :", 120, 65);
+  doc.setFont("helvetica", "normal");
+  doc.text("Nom : " + fTxt(order.customer.n).toUpperCase(), 120, 75);
+  doc.text("Tel : " + order.customer.p, 120, 81);
+  doc.text("Lieu : " + fTxt(order.customer.a), 120, 87);
+
+  // Table
+  doc.setDrawColor(220, 220, 220); doc.line(20, 100, 190, 100);
+  doc.setFont("helvetica", "bold");
+  doc.text("Produit", 20, 108); doc.text("Qte", 140, 108); doc.text("Total", 170, 108);
+  doc.line(20, 112, 190, 112);
+  
+  doc.setFont("helvetica", "normal");
+  let y = 122;
+  order.items.forEach((it: any) => {
+    doc.text(fTxt(it.name), 20, y); doc.text(String(it.quantity), 140, y); doc.text(fNum(it.price * it.quantity), 170, y);
+    y += 10;
+  });
+  
+  doc.line(20, y, 190, y);
+  doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.setTextColor(0, 104, 55);
+  doc.text("TOTAL : " + fNum(order.total) + " FCFA", 100, y + 15);
+  
+  doc.save("Facture_Toggou_" + order.displayId + ".pdf");
+};
+
+function SuccessView({ order, setView }: any) {
+  return (
+    <div className="max-w-xl mx-auto p-4 animate-fade-in text-center">
+      <div className="bg-white rounded-[50px] shadow-2xl p-12 border-b-[16px] border-green-800">
+        <CheckCircle size={70} className="text-green-600 mx-auto mb-6" />
+        <h2 className="text-4xl font-black text-green-950 uppercase tracking-tighter">Validée !</h2>
+        <div className="my-10 bg-gray-50 p-8 rounded-[35px] border-4 border-dashed border-gray-200">
+           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Identifiant</p>
+           <p className="text-4xl font-black text-gray-800 tracking-tighter">{order?.displayId}</p>
+        </div>
+        <div className="grid gap-4">
+           <button onClick={() => genererFacture(order)} className="flex items-center justify-center gap-3 bg-blue-600 text-white font-black py-5 rounded-[25px] shadow-xl hover:bg-blue-700 transition active:scale-95"><FileText size={22}/> Télécharger le Reçu PDF</button>
+           <button onClick={()=>setView('home')} className="w-full bg-green-950 text-white font-black py-6 rounded-[25px] uppercase shadow-lg text-lg">Retour Boutique</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaveSuccessView({ order, setView, waveConfig }: any) {
+  return (
+    <div className="max-w-xl mx-auto p-4 animate-fade-in text-center">
+      <div className="bg-white rounded-[50px] shadow-2xl overflow-hidden border-4 border-blue-500 p-10">
+        <Smartphone size={70} className="mx-auto mb-4 animate-bounce text-blue-600" />
+        <h2 className="text-3xl font-black text-blue-800 uppercase tracking-tighter leading-none">Attente de Paiement</h2>
+        <div className="my-8 bg-blue-50 p-8 rounded-[35px] border-2 border-blue-100"><p className="text-gray-500 font-bold text-[11px] uppercase mb-1">À envoyer via Wave :</p><p className="text-6xl font-black text-blue-700 tracking-tighter">{order?.total.toLocaleString()} F</p></div>
+        <div className="bg-gray-50 p-8 rounded-[30px] border-4 border-dashed border-gray-200 mb-8"><p className="text-[10px] uppercase font-black text-gray-400 mb-3 tracking-widest">Numéro de réception :</p><p className="text-4xl font-black text-gray-800 tracking-widest">{waveConfig.phone}</p></div>
+        <div className="grid gap-4">
+          <button onClick={() => genererFacture(order)} className="flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-700 font-black py-5 rounded-2xl transition border-2 border-gray-200"><Download size={20}/> Obtenir Bon de commande</button>
+          <button onClick={()=>setView('home')} className="w-full bg-blue-600 text-white font-black py-6 rounded-[25px] shadow-xl uppercase transform active:scale-95 transition text-lg">J'ai effectué le paiement</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// DASHBOARD ADMIN 
+// ==========================================
+function AdminPanel({ orders, setOrders, products, setProducts, gallery, setGallery, waveConfig, setWaveConfig, adminCreds, setAdminCreds, user }: any) {
+  const [tab, setTab] = useState('orders');
+  const [editing, setEditing] = useState<any>(null);
+  const [editWave, setEditWave] = useState(waveConfig);
+  const [editCreds, setEditCreds] = useState(adminCreds);
+  useEffect(()=>{setEditWave(waveConfig);setEditCreds(adminCreds);},[waveConfig, adminCreds]);
+
+  const updStatus = async (id:string, s:string) => {
+    const o = orders.find((x:any)=>x.id===id);
+    if(user) await setDoc(doc(getCol('orders'), id), {...o, status: s});
+  };
+  const saveProd = async () => {
+    const n = editing.id ? editing : {...editing, id:Date.now().toString()};
+    if(user) await setDoc(doc(getCol('products'), n.id), n);
+    setEditing(null); alert("Produit Sauvé !");
+  };
+  const delProd = async (id:string) => { if(!window.confirm("Supprimer ?")) return; if(user) await deleteDoc(doc(getCol('products'), id)); };
+  const addPhoto = async (u:string) => { const n = { id:Date.now().toString(), url:u, createdAt:Date.now() }; if(user) await setDoc(doc(getCol('gallery'), n.id), n); alert("Photo ajoutée !"); };
+  const delPhoto = async (id:string) => { if(user) await deleteDoc(doc(getCol('gallery'), id)); };
+  const saveSets = async () => {
+    if(user) { await setDoc(doc(getCol('settings'), 'wave_config'), editWave); await setDoc(doc(getCol('settings'), 'admin_creds'), editCreds); }
+    alert("Paramètres enregistrés !");
+  };
+
+  const totalRevenue = orders.reduce((a:any,o:any)=>o.status==='Livrée'?a+o.total:a,0);
+
+  return (
+    <div className="flex flex-col md:flex-row gap-6 p-2 md:p-6 animate-fade-in bg-white/50 rounded-[40px]">
+      <div className="w-full md:w-72 flex-shrink-0">
+        <div className="bg-white rounded-[35px] p-5 shadow-2xl flex flex-row md:flex-col gap-3 overflow-x-auto md:sticky md:top-[120px] border border-gray-100">
+           <button onClick={()=>setTab('orders')} className={`flex items-center gap-4 px-6 py-5 rounded-[20px] font-black text-xs uppercase transition-all whitespace-nowrap ${tab==='orders'?'bg-green-50 text-green-800 shadow-md border border-green-200 transform scale-105':'text-gray-400 hover:bg-gray-50'}`}><ListOrdered size={20}/> Commandes</button>
+           <button onClick={()=>setTab('prod')} className={`flex items-center gap-4 px-6 py-5 rounded-[20px] font-black text-xs uppercase transition-all whitespace-nowrap ${tab==='prod'?'bg-green-50 text-green-800 shadow-md border border-green-200 transform scale-105':'text-gray-400 hover:bg-gray-50'}`}><Package size={20}/> Produits</button>
+           <button onClick={()=>setTab('gal')} className={`flex items-center gap-4 px-6 py-5 rounded-[20px] font-black text-xs uppercase transition-all whitespace-nowrap ${tab==='gal'?'bg-green-50 text-green-800 shadow-md border border-green-200 transform scale-105':'text-gray-400 hover:bg-gray-50'}`}><Camera size={20}/> Photos</button>
+           <button onClick={()=>setTab('sets')} className={`flex items-center gap-4 px-6 py-5 rounded-[20px] font-black text-xs uppercase transition-all whitespace-nowrap ${tab==='sets'?'bg-blue-50 text-blue-800 shadow-md border border-blue-200 transform scale-105':'text-gray-400 hover:bg-gray-50'}`}><Settings size={20}/> Profil</button>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-6">
+        {tab==='orders' && (
+          <div className="space-y-6 animate-fade-in">
+            <h2 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">Commandes Clients</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+               <div className="bg-white p-8 rounded-[35px] shadow-lg border-l-[12px] border-l-green-600 flex flex-col justify-between">
+                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Chiffre d'Affaire (Livré)</p>
+                 <p className="text-4xl font-black text-green-700 tracking-tighter">{totalRevenue.toLocaleString()} F</p>
+               </div>
+               <div className="bg-white p-8 rounded-[35px] shadow-lg border-l-[12px] border-l-blue-600 flex flex-col justify-between">
+                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Total Historique</p>
+                 <p className="text-4xl font-black text-blue-700 tracking-tighter">{orders.length} commandes</p>
+               </div>
+            </div>
+
+            <div className="bg-white rounded-[40px] shadow-2xl border border-gray-100 overflow-hidden">
+              <div className="p-8 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center"><h3 className="font-black text-gray-800 uppercase text-xl">Détails</h3></div>
+              <div className="p-6 space-y-4">
+                {orders.map((o:any)=>(
+                  <div key={o.id} className="bg-white p-6 rounded-[30px] shadow-sm flex flex-col md:flex-row justify-between gap-6 transition border-2 border-gray-50 hover:border-green-200 group">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex flex-wrap items-center gap-3 mb-2">
+                        <span className="bg-gray-100 border border-gray-200 text-[10px] font-black px-3 py-1.5 rounded-lg text-gray-500 shadow-sm">{o.displayId}</span>
+                        <span className={`text-[10px] font-black px-3 py-1.5 rounded-lg shadow-sm ${o.status.includes('Valide')?'bg-green-100 text-green-700':o.status==='Livrée'?'bg-gray-800 text-white':'bg-blue-100 text-blue-700'}`}>{o.status}</span>
+                        {/* 👉 BADGE DU MODE DE PAIEMENT POUR L'ADMIN */}
+                        <span className={`text-[10px] font-black px-3 py-1.5 rounded-lg shadow-sm ${o.method === 'wave' ? 'bg-blue-500 text-white' : 'bg-green-500 text-white'}`}>{o.method==='wave'?'🔵 WAVE':'🟢 ESPECES'}</span>
+                      </div>
+                      <p className="font-black text-2xl uppercase leading-none tracking-tighter">{o.customer.n}</p>
+                      <div className="text-sm font-bold text-gray-500 flex flex-col gap-1 mt-3"><span>📞 {o.customer.p}</span><span>📍 {o.customer.a}</span></div>
+                    </div>
+                    <div className="flex items-center justify-between md:flex-col md:items-end gap-3 border-t border-gray-100 md:border-0 pt-6 md:pt-0 min-w-[150px]">
+                      <p className="font-black text-3xl text-green-800 tracking-tighter">{o.total.toLocaleString()} F</p>
+                      <select value={o.status} onChange={e=>updStatus(o.id, e.target.value)} className="bg-gray-50 border-2 border-gray-200 text-gray-800 p-3 px-5 rounded-xl font-black text-xs uppercase outline-none shadow-sm cursor-pointer hover:border-green-500 transition w-full md:w-auto"><option value="Validée">Validée</option><option value="Vérif Wave">Vérif Wave</option><option value="Livrée">Livrée</option><option value="Annulée">Annulée</option></select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {tab==='prod' && (
+          <div className="space-y-6 animate-fade-in">
+            <button onClick={()=>setEditing({name:'',price:0,description:'',image:''})} className="bg-green-800 hover:bg-green-900 text-white font-black py-4 px-8 rounded-2xl shadow-xl flex items-center gap-2 uppercase text-xs transition active:scale-95"><Plus size={18} /> Ajouter un plat</button>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+               {products.map((p:any)=>(
+                  <div key={p.id} className="bg-white p-6 rounded-[35px] shadow-lg border border-gray-50 flex items-center gap-6 hover:shadow-xl transition">
+                     <div className="w-28 h-28 bg-gray-50 rounded-[25px] overflow-hidden border-2 border-gray-100 shadow-inner">{p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <ImageIcon className="w-full h-full p-8 text-gray-200"/>}</div>
+                     <div className="flex-1 min-w-0"><p className="font-black text-gray-900 uppercase truncate text-lg mb-2 tracking-tighter">{p.name}</p><p className="text-green-700 font-black text-2xl tracking-tighter">{Number(p.price).toLocaleString()} F</p></div>
+                     <div className="flex flex-col gap-3"><button onClick={()=>setEditing(p)} className="bg-blue-50 text-blue-600 p-4 rounded-xl hover:bg-blue-100 transition shadow-sm"><Edit size={18}/></button><button onClick={()=>delProd(p.id)} className="bg-red-50 text-red-600 p-4 rounded-xl hover:bg-red-100 transition shadow-sm"><Trash2 size={18}/></button></div>
+                  </div>
+               ))}
+            </div>
+          </div>
+        )}
+        {tab==='sets' && (
+          <div className="space-y-8 animate-fade-in max-w-3xl">
+            <div className="bg-white p-10 rounded-[40px] shadow-xl border border-gray-50 border-l-[12px] border-l-blue-500 space-y-6">
+              <h3 className="font-black text-blue-900 uppercase flex items-center gap-3"><Smartphone size={28}/> Wave Sénégal</h3>
+              <input className="w-full bg-gray-50 border-4 border-gray-50 focus:border-blue-300 p-5 rounded-2xl font-bold text-sm outline-none transition shadow-inner" value={editWave.link} onChange={e=>setEditWave({...editWave, link: e.target.value})} placeholder="Lien Wave Business" />
+              <input className="w-full bg-gray-50 border-4 border-gray-50 focus:border-blue-300 p-5 rounded-2xl font-black text-2xl tracking-widest outline-none transition shadow-inner text-gray-800" value={editWave.phone} onChange={e=>setEditWave({...editWave, phone: e.target.value})} placeholder="Numéro Wave" />
+            </div>
+            <div className="bg-white p-10 rounded-[40px] shadow-xl border border-gray-50 border-l-[12px] border-l-gray-800 space-y-6">
+              <h3 className="font-black text-gray-900 uppercase flex items-center gap-3"><ShieldCheck size={28}/> Profil Administrateur</h3>
+              <input className="w-full bg-gray-50 border-4 border-gray-100 focus:border-gray-400 p-5 rounded-2xl font-black outline-none transition text-lg shadow-inner text-gray-800" value={editCreds.username} onChange={e=>setEditCreds({...editCreds, username: e.target.value})} placeholder="Nom d'utilisateur" />
+              <input className="w-full bg-gray-50 border-4 border-gray-100 p-5 rounded-2xl font-black outline-none transition text-lg shadow-inner text-gray-800" value={editCreds.password} onChange={e=>setEditCreds({...editCreds, password: e.target.value})} placeholder="Mot de passe secret" />
+            </div>
+            <button onClick={saveSets} className="w-full bg-green-950 hover:bg-black text-white font-black py-7 rounded-[35px] shadow-2xl uppercase tracking-widest text-lg transform active:scale-95 transition">Enregistrer</button>
+          </div>
+        )}
+        {tab === 'gal' && (
+          <div className="space-y-6 animate-fade-in">
+             <div className="border-4 border-dashed border-gray-200 bg-white p-16 text-center relative rounded-[40px] cursor-pointer hover:bg-green-50 transition-all shadow-sm group">
+                <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={e=>{const f=e.target.files?.[0]; if(f){const r=new FileReader(); r.onload=(ev:any)=>addPhoto(ev.target.result); r.readAsDataURL(f);}}} />
+                <div className="flex flex-col items-center"><div className="bg-gray-100 p-6 rounded-full mb-4 text-gray-400 group-hover:text-green-700 transition shadow-inner"><Camera size={40} /></div><p className="font-black text-gray-800 group-hover:text-green-900 uppercase text-xl">Ajouter une photo</p></div>
+             </div>
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6">
+                {gallery.map((img:any)=>(
+                  <div key={img.id} className="relative aspect-square rounded-[30px] overflow-hidden border-4 border-white shadow-lg group"><img src={img.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" /><button onClick={()=>delPhoto(img.id)} className="absolute top-4 right-4 bg-white/90 text-red-600 p-3 rounded-full shadow-xl opacity-0 group-hover:opacity-100 transition transform translate-y-2 group-hover:translate-y-0"><Trash2 size={18}/></button></div>
+                ))}
+             </div>
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/70 z-[100] p-4 md:p-8 flex items-center justify-center backdrop-blur-md animate-fade-in">
+           <div className="bg-white w-full max-w-xl rounded-[50px] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-slide-in">
+              <div className="flex justify-between items-center p-8 border-b border-gray-100 bg-gray-50"><h2 className="text-2xl font-black uppercase text-green-900 tracking-tighter">{editing.id ? 'Éditer' : 'Nouveau Plat'}</h2><button onClick={()=>setEditing(null)} className="p-3 bg-white shadow-md rounded-full text-gray-400 hover:text-red-500 transition"><X size={24}/></button></div>
+              <div className="p-8 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
+                 <div className="flex flex-col items-center">
+                   <div className="relative w-40 h-40 bg-white rounded-[35px] border-4 border-dashed border-gray-200 flex items-center justify-center overflow-hidden mb-3 group cursor-pointer hover:border-green-400 transition">
+                      {editing.image ? <img src={editing.image} className="w-full h-full object-cover" /> : <ImageIcon size={40} className="text-gray-300 group-hover:text-green-500 transition" />}
+                      <input type="file" accept="image/*" onChange={e=>{const f=e.target.files?.[0]; if(f){const r=new FileReader(); r.onload=(ev:any)=>setEditing({...editing, image:ev.target.result}); r.readAsDataURL(f);}}} className="absolute inset-0 opacity-0 cursor-pointer" />
+                   </div>
+                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-1 rounded-full">Cliquez pour changer l'image</p>
+                 </div>
+                 <div className="space-y-5">
+                    <input className="w-full border-4 border-gray-50 bg-gray-50 p-5 rounded-2xl font-black outline-none focus:border-green-500 transition text-xl" value={editing.name} onChange={e=>setEditing({...editing, name: e.target.value})} placeholder="Nom du Plat" />
+                    <input type="number" className="w-full border-4 border-gray-50 bg-gray-50 p-5 rounded-2xl font-black outline-none text-green-700 focus:border-green-500 transition text-2xl tracking-tighter" value={editing.price} onChange={e=>setEditing({...editing, price: Number(e.target.value)})} placeholder="Prix FCFA" />
+                    <textarea className="w-full bg-gray-50 p-6 rounded-[30px] font-bold outline-none border-4 border-gray-50 h-40 resize-none focus:border-green-500 transition" value={editing.description} onChange={e=>setEditing({...editing, description: e.target.value})} placeholder="Description du produit..." />
+                 </div>
+              </div>
+              <div className="p-8 border-t border-gray-100 bg-white"><button onClick={saveProd} className="w-full bg-green-900 hover:bg-black text-white font-black py-6 rounded-[30px] shadow-xl uppercase tracking-widest text-lg transform active:scale-95 transition">Enregistrer</button></div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+}
