@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  ShoppingBag, ShoppingCart, Phone, Truck, CheckCircle, 
-  Trash2, Loader2, ArrowRight, Plus, Minus, Smartphone, 
-  Edit, ImageIcon, Settings, Lock, User, X, LogOut, ShieldCheck, 
-  Download, FileText, Camera
+  ShoppingBag, ShoppingCart, Truck, CheckCircle, 
+  Plus, Minus, Smartphone, Download, ShieldCheck
 } from 'lucide-react';
 
 // LOGO
@@ -12,7 +10,7 @@ import monLogo from './logo.png';
 // FIREBASE
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const isCanvasEnv = typeof (window as any).__firebase_config !== 'undefined';
 const monFirebaseConfig = { 
@@ -51,10 +49,15 @@ export default function App() {
   const [showLogin, setShowLogin] = useState(false);
   const [lastOrder, setLastOrder] = useState<any>(null);
 
-  useEffect(() => {
-    // Sécurité : Ne pas rester bloqué plus de 3 secondes sur l'écran de chargement
-    const timer = setTimeout(() => setLoading(false), 3000);
+  const logoClicks = useRef(0);
+  const handleLogoTrigger = () => {
+    logoClicks.current += 1;
+    if (logoClicks.current >= 5) { logoClicks.current = 0; setShowLogin(true); }
+    setTimeout(() => { logoClicks.current = 0; }, 3000);
+  };
 
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 2500);
     const init = async () => {
       try {
         if ((window as any).__initial_auth_token) await signInWithCustomToken(auth, (window as any).__initial_auth_token);
@@ -62,8 +65,7 @@ export default function App() {
       } catch (e) { console.error(e); }
     };
     init();
-
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
         onSnapshot(getCol('products'), (s) => {
@@ -74,8 +76,7 @@ export default function App() {
         onSnapshot(getCol('orders'), (s) => setOrders(s.docs.map(d=>({id:d.id, ...d.data()})).sort((a:any,b:any)=>b.createdAt-a.createdAt)));
       }
     });
-
-    return () => { clearTimeout(timer); unsubAuth(); };
+    return () => { unsub(); clearTimeout(timer); };
   }, []);
 
   const addToCart = (p: any) => { setCart([...cart, p]); setView('cart'); };
@@ -87,12 +88,7 @@ export default function App() {
     setLastOrder(newOrder); setCart([]); setView('success');
   };
 
-  if (loading) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-[#FDFCF0]">
-      <Loader2 className="w-12 h-12 text-green-700 animate-spin mb-4" />
-      <p className="font-black text-green-800 uppercase tracking-widest text-xs">Ouverture de la cuisine...</p>
-    </div>
-  );
+  if (loading) return <div className="h-screen flex items-center justify-center bg-[#FDFCF0] font-black text-green-800 animate-pulse uppercase">Ouverture...</div>;
 
   return (
     <div className="min-h-screen bg-[#FDFCF0] font-sans text-gray-800">
@@ -103,19 +99,18 @@ export default function App() {
             <ShieldCheck size={40} className="mx-auto text-yellow-600 mb-4" />
             <h2 className="text-2xl font-black uppercase mb-6">Espace Chef</h2>
             <button onClick={() => {setIsAdmin(true); setShowLogin(false)}} className="w-full bg-black text-white py-4 rounded-2xl font-black">ENTRER</button>
-            <button onClick={() => setShowLogin(false)} className="mt-4 text-gray-400 text-xs underline">FERMER</button>
           </div>
         </div>
       )}
 
       <header className="bg-[#006837] text-white p-3 sticky top-0 z-50 flex justify-between items-center border-b-4 border-yellow-400 shadow-lg">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setShowLogin(true)}>
-          <img src={monLogo} className="w-10 h-10 bg-white rounded-full border-2 border-yellow-400" onError={(e:any)=>e.target.style.display='none'} />
+        <div className="flex items-center gap-3 cursor-pointer" onClick={handleLogoTrigger}>
+          <img src={monLogo} className="w-10 h-10 bg-white rounded-full border-2 border-yellow-400" alt="logo" />
           <h1 className="font-black text-lg text-yellow-400 uppercase tracking-tighter">Toggou Yaye Isseu</h1>
         </div>
         <button onClick={() => setView('cart')} className="relative p-2 bg-black/20 rounded-full">
           <ShoppingCart size={22} />
-          {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-black">{cart.length}</span>}
+          {cart.length > 0 && <span className="absolute -top-1 -right-1 bg-yellow-400 text-black text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-black border-2 border-[#006837]">{cart.length}</span>}
         </button>
       </header>
 
@@ -126,13 +121,13 @@ export default function App() {
               <div className="grid gap-8">
                 {products.map((p: any) => (
                   <div key={p.id} className="bg-white rounded-[40px] shadow-xl overflow-hidden flex flex-col md:flex-row border border-green-50 animate-fade-in">
-                    <div className="md:w-1/3 h-64 md:h-auto"><img src={p.image} className="w-full h-full object-cover" /></div>
+                    <div className="md:w-1/3 h-64 md:h-auto"><img src={p.image} className="w-full h-full object-cover" alt="pdt" /></div>
                     <div className="p-8 md:w-2/3">
-                      <h2 className="text-3xl font-black text-green-800 uppercase tracking-tighter leading-none mb-4">{p.name}</h2>
+                      <h2 className="text-3xl font-black text-green-800 uppercase tracking-tighter mb-4">{p.name}</h2>
                       <p className="text-gray-500 italic mb-8">"{p.description}"</p>
                       <div className="flex justify-between items-center mt-auto">
                         <span className="text-4xl font-black text-green-700">{Number(p.price).toLocaleString()} F</span>
-                        <button onClick={() => addToCart(p)} className="bg-[#006837] text-white px-8 py-4 rounded-2xl font-black uppercase shadow-lg transform active:scale-95 transition">Acheter</button>
+                        <button onClick={() => addToCart(p)} className="bg-[#006837] text-white px-10 py-4 rounded-2xl font-black uppercase shadow-lg transform active:scale-95 transition">Acheter</button>
                       </div>
                     </div>
                   </div>
@@ -142,7 +137,7 @@ export default function App() {
 
             {view === 'cart' && (
                <div className="max-w-xl mx-auto bg-white p-8 rounded-[40px] shadow-2xl animate-fade-in">
-                 <h2 className="text-2xl font-black mb-8 border-b pb-4 text-center uppercase tracking-tighter">Votre Panier</h2>
+                 <h2 className="text-2xl font-black mb-8 border-b pb-4 text-center uppercase">Panier</h2>
                  {cart.length === 0 ? <p className="text-center py-10 font-bold text-gray-300">Vide...</p> : cart.map((item, idx) => (
                    <div key={idx} className="flex justify-between items-center mb-4 font-bold border-b border-gray-50 pb-2 uppercase text-sm">
                      <span>{item.name}</span>
@@ -152,8 +147,8 @@ export default function App() {
                  {cart.length > 0 && (
                    <div className="mt-8 flex flex-col gap-4">
                       <p className="text-4xl font-black text-center text-green-900 mb-6">{cart.reduce((a,b)=>a+b.price,0).toLocaleString()} F</p>
-                      <button onClick={() => valider({n:'Client Mouhamed', a:'Dakar'}, 'Wave')} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase shadow-lg">Payer par Wave</button>
-                      <button onClick={() => valider({n:'Client Mouhamed', a:'Dakar'}, 'Espèces')} className="w-full bg-green-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg">Payer à la livraison</button>
+                      <button onClick={() => valider({n:'Client Web', a:'Sénégal'}, 'Wave')} className="w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase shadow-lg flex items-center justify-center gap-2"><Smartphone size={20}/> Wave</button>
+                      <button onClick={() => valider({n:'Client Web', a:'Sénégal'}, 'Livraison')} className="w-full bg-green-900 text-white py-5 rounded-2xl font-black uppercase shadow-lg flex items-center justify-center gap-2"><Truck size={20}/> Espèces</button>
                       <button onClick={() => setView('home')} className="text-gray-400 font-bold uppercase text-xs text-center mt-2 underline">Retour</button>
                    </div>
                  )}
@@ -165,24 +160,22 @@ export default function App() {
                  <CheckCircle size={80} className="text-green-600 mx-auto mb-6" />
                  <h2 className="text-4xl font-black text-green-950 uppercase mb-4 leading-none tracking-tighter">MERCI !</h2>
                  <p className="text-gray-400 font-black mb-10 uppercase text-xs">Réf : {lastOrder?.displayId}</p>
-                 <div className="grid gap-4">
-                   <button onClick={() => {
-                     const { jsPDF } = (window as any).jspdf;
-                     const doc = new jsPDF();
-                     const fN = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-                     doc.setFillColor(0, 104, 55); doc.rect(0, 0, 210, 40, 'F');
-                     doc.setTextColor(255, 255, 255); doc.setFontSize(22); doc.text("TOGGOU YAYE ISSEU", 20, 25);
-                     doc.setTextColor(0,0,0); doc.setFontSize(16); doc.text("RECU DE COMMANDE", 20, 60);
-                     doc.setFontSize(10); doc.text("Reference: " + lastOrder.displayId, 20, 70);
-                     doc.text("Mode: " + lastOrder.method, 20, 76);
-                     doc.line(20, 85, 190, 85);
-                     let y = 95;
-                     lastOrder.items.forEach((it:any) => { doc.text(String(it.name).toUpperCase(), 20, y); doc.text(fN(it.price) + " F", 160, y); y+=10; });
-                     doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text("TOTAL : " + fN(lastOrder.total) + " FCFA", 120, y + 15);
-                     doc.save("Facture_Toggou.pdf");
-                   }} className="bg-blue-600 text-white px-10 py-5 rounded-[25px] font-black uppercase text-sm mb-4 flex items-center justify-center gap-3 shadow-xl"><Download size={20}/> Télécharger le Reçu PDF</button>
-                   <button onClick={() => setView('home')} className="bg-gray-100 text-gray-800 px-10 py-5 rounded-[25px] font-black uppercase text-sm">Fermer</button>
-                 </div>
+                 <button onClick={() => {
+                   const { jsPDF } = (window as any).jspdf;
+                   const doc = new jsPDF();
+                   const fN = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+                   doc.setFillColor(0, 104, 55); doc.rect(0, 0, 210, 40, 'F');
+                   doc.setTextColor(255, 255, 255); doc.setFontSize(22); doc.text("TOGGOU YAYE ISSEU", 20, 25);
+                   doc.setTextColor(0,0,0); doc.setFontSize(16); doc.text("FACTURE DE COMMANDE", 20, 60);
+                   doc.setFontSize(10); doc.text("Reference: " + lastOrder.displayId, 20, 70);
+                   doc.text("Paiement: " + lastOrder.method, 20, 76);
+                   doc.line(20, 85, 190, 85);
+                   let y = 95;
+                   lastOrder.items.forEach((it:any) => { doc.text(String(it.name).toUpperCase(), 20, y); doc.text(fN(it.price) + " F", 160, y); y+=10; });
+                   doc.setFontSize(14); doc.setFont("helvetica", "bold"); doc.text("TOTAL : " + fN(lastOrder.total) + " FCFA", 120, y + 15);
+                   doc.save("Facture_Toggou.pdf");
+                 }} className="bg-blue-600 text-white px-10 py-5 rounded-[25px] font-black uppercase text-sm mb-4 flex items-center justify-center gap-3 shadow-xl transform active:scale-95 transition"><Download size={20}/> Télécharger le Reçu PDF</button>
+                 <br/><button onClick={() => setView('home')} className="text-green-800 font-black uppercase text-sm mt-8 underline">Fermer</button>
               </div>
             )}
           </>
@@ -190,10 +183,10 @@ export default function App() {
           <div className="bg-white p-8 rounded-[40px] shadow-2xl animate-fade-in border-t-[12px] border-green-800">
              <div className="flex justify-between items-center mb-8">
                <h2 className="text-2xl font-black text-green-950 uppercase tracking-tighter">Commandes Reçues</h2>
-               <button onClick={() => setIsAdmin(false)} className="bg-red-500 text-white p-2 px-4 rounded-xl font-bold text-xs">X</button>
+               <button onClick={() => setIsAdmin(false)} className="bg-red-500 text-white p-2 px-4 rounded-xl font-bold text-xs uppercase">X</button>
              </div>
              <div className="space-y-4">
-                {orders.length === 0 ? <p className="text-center py-20 text-gray-300 font-bold italic">En attente de commandes...</p> : orders.map((o:any)=>(
+                {orders.length === 0 ? <p className="text-center py-20 text-gray-300 font-bold italic">En attente...</p> : orders.map((o:any)=>(
                    <div key={o.id} className="bg-gray-50 p-6 rounded-[30px] flex justify-between items-center border-l-8 border-green-600 shadow-sm">
                       <div>
                         <p className="font-black text-xl uppercase tracking-tighter">{o.customer?.n || "Client"}</p>
@@ -207,7 +200,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="p-10 text-center text-gray-300 text-[9px] font-black uppercase tracking-widest mt-auto border-t">
+      <footer className="p-10 text-center text-gray-300 text-[9px] font-black uppercase tracking-widest mt-auto border-t border-gray-100">
         © {new Date().getFullYear()} Mouhamed • Excellence Culinaire 🇸🇳
       </footer>
     </div>
